@@ -23,6 +23,7 @@ import socketserver
 from threading import Condition
 from http import server
 
+from pygame import mixer
 
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
@@ -98,6 +99,13 @@ def annotate_objects(image, results, labels):
             fill="Red",
         )
 
+def play_sound():
+    sound = mixer.Sound('applause-1.wav')
+    sound.play()
+
+def init():
+    mixer.init()
+
 
 PAGE = """\
 <html>
@@ -163,17 +171,15 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
                             .convert("RGB")
                             .resize((input_width, input_height), Image.ANTIALIAS)
                         )
-                        start_time = time.monotonic()
 
                         results = detect_objects(interpreter, image, args.threshold)
-                        elapsed_ms = (time.monotonic() - start_time) * 1000
-
+                        if next((item for item in results if labels[item["class_id"]] == "person"), False):
+                            play_sound()
                         annotate_objects(image, results, labels)
                         img_byte_arr = io.BytesIO()
                         image.save(img_byte_arr, format="jpeg")
 
                         output.buffer.truncate()
-                        # frame = output.buffer.getvalue()
                         frame = img_byte_arr.getvalue()
                     self.wfile.write(b"--FRAME\r\n")
                     self.send_header("Content-Type", "image/jpeg")
@@ -196,6 +202,7 @@ class StreamingServer(socketserver.ThreadingMixIn, server.HTTPServer):
 
 
 # main
+init()
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("--model", help="File path of .tflite file.", required=True)
 parser.add_argument("--labels", help="File path of labels file.", required=True)
@@ -215,8 +222,7 @@ _, input_height, input_width, _ = interpreter.get_input_details()[0]["shape"]
 
 with picamera.PiCamera(resolution=(CAMERA_WIDTH, CAMERA_HEIGHT), framerate=5) as camera:
     output = StreamingOutput()
-    # Uncomment the next line to change your Pi's Camera rotation (in degrees)
-    # camera.rotation = 90
+    
     camera.start_recording(output, format="mjpeg")
     try:
         address = ("", 8000)
